@@ -68,7 +68,7 @@ struct {
 	array<string> waveAnnouncement = []
 	vector shopPosition
 	vector shopAngles = < 0, 0, 0 >
-	vector dropshipSpawnPosition
+	vector dropshipSpawnPosition  = < 0, 0, 0 >
 	vector dropshipSpawnAngles = < 0, 0, 0 >
 	vector groundSpawnPosition
 	vector groundSpawnAngles = < 0, 0, 0 >
@@ -160,7 +160,6 @@ void function GamemodeFD_Init()
 {
 	PrecacheModel( MODEL_ATTRITION_BANK )
 	PrecacheModel( MODEL_IMC_SHIELD_CAPTAIN )
-	PrecacheModel( $"models/robots/drone_frag/drone_frag.mdl" )
 	PrecacheModel( $"models/creatures/prowler/r2_prowler.mdl" )
 	PrecacheParticleSystem( $"P_smokescreen_FD" )
 	
@@ -204,11 +203,11 @@ void function GamemodeFD_Init()
 
 	//Damage Callbacks
 	AddDamageByCallback( "player", FD_DamageByPlayerCallback )
-	AddDamageCallback( "player", DamageScaleByDifficulty )
-	AddDamageCallback( "npc_titan", DamageScaleByDifficulty )
-	AddDamageCallback( "npc_turret_sentry", DamageScaleByDifficulty )
-	AddDamageCallback( "npc_turret_sentry", RevivableTurret_DamageCallback )
-	AddDamageCallback( "npc_turret_mega", HeavyTurret_DamageCallback )
+	AddDamageFinalCallback( "player", DamageScaleByDifficulty )
+	AddDamageFinalCallback( "npc_titan", DamageScaleByDifficulty )
+	AddDamageFinalCallback( "npc_turret_sentry", DamageScaleByDifficulty )
+	AddDamageFinalCallback( "npc_turret_sentry", RevivableTurret_DamageCallback )
+	AddDamageFinalCallback( "npc_turret_mega", HeavyTurret_DamageCallback )
 	AddDamageFinalCallback( "npc_titan", FD_DamageToMoney )
 	AddDamageFinalCallback( "player", FD_DamageToMoney ) //PvP case, player Titans will give money
 	
@@ -238,7 +237,7 @@ void function GamemodeFD_Init()
 
 	//Command Callbacks
 	AddClientCommandCallback( "FD_ToggleReady", ClientCommandCallbackToggleReady )
-	AddClientCommandCallback( "FD_UseHarvesterShieldBoost", useShieldBoost )
+	AddClientCommandCallback( "FD_UseHarvesterShieldBoost", ClientCommandCallbackUseShieldBoost )
 	AddClientCommandCallback( "FD_SetTutorialBit", ClientCommand_FDSetTutorialBit )
 	AddClientCommandCallback( "dropbattery", ClientCommandCallbackFDDropBattery )
 
@@ -262,6 +261,7 @@ void function GamemodeFD_Init()
 	difficultyLevel = FD_GetDifficultyLevel() //Refresh this only on map load, to avoid midgame commands messing up with difficulties (i.e setting mp_gamemode fd_hard midgame in a regular match through console on local host would immediately make Stalkers spawns with EPG)
 	file.easymodeSmartPistol = GetCurrentPlaylistVarInt( "fd_smart_pistol_easy_mode", 0 ) == 1
 	
+	#if SERVER
 	if( GetConVarString( "ns_fd_grunt_primary_weapon" ) != "" )
 	{
 		string Cvar_gruntweapons = GetConVarString( "ns_fd_grunt_primary_weapon" )
@@ -294,9 +294,11 @@ void function GamemodeFD_Init()
 	}
 	
 	level.endOfRoundPlayerState = ENDROUND_FREE
+	EliteTitans_Init()
+	#endif
 	
 	for( int i = 0; i < 20; i++ ) //Setup NPC array for Harvester Damage tracking
-		file.harvesterDamageSource.append(0.0)
+		file.harvesterDamageSource.append( 0.0 )
 	
 	switch ( difficultyLevel )
 	{
@@ -622,7 +624,7 @@ void function FD_createHarvester()
 	
 	ToggleNPCPathsForEntity( fd_harvester.harvester, false )
 	AddEntityCallback_OnPostShieldDamage( fd_harvester.harvester, HarvesterShieldInvulnCheck )
-	AddEntityCallback_OnDamaged( fd_harvester.harvester, OnHarvesterDamaged )
+	AddEntityCallback_OnFinalDamaged( fd_harvester.harvester, OnHarvesterDamaged )
 	thread MonitorHarvesterProximity( fd_harvester.harvester )
 	SetGlobalNetInt( "FD_waveState", WAVE_STATE_NONE )
 	
@@ -726,8 +728,6 @@ void function mainGameLoop()
 				foreach( entity player in GetPlayerArray() )
 					GiveTitanToPlayer( player )
 			}
-			
-			thread FD_AttemptToRepairTurrets()
 		}
 
 		if( !runWave( currentWave, showShop ) )
@@ -865,7 +865,7 @@ bool function runWave( int waveIndex, bool shouldDoBuyTime )
 		
 		while( Time() < GetGlobalNetTime( "FD_nextWaveStartTime" ) )
 		{
-			if( allPlayersReady() )
+			if( FD_CheckPlayersReady() )
 				SetGlobalNetTime( "FD_nextWaveStartTime", Time() )
 			WaitFrame()
 		}
@@ -974,10 +974,9 @@ bool function runWave( int waveIndex, bool shouldDoBuyTime )
 		{
 			SetWinner( TEAM_IMC )
 			PlayFactionDialogueToTeam( "fd_baseDeath", TEAM_MILITIA, true )
-			int restartsRemaining = FD_GetNumRestartsLeft()
 			foreach( entity player in GetPlayerArrayOfTeam( TEAM_MILITIA ) )
 			{
-				Remote_CallFunction_NonReplay( player, "ServerCallback_FD_DisplayHarvesterKiller", restartsRemaining, getHintForTypeId( highestDamageSource[0] ), highestDamageSource[0], highestDamage[0] / totalDamage, highestDamageSource[1], highestDamage[1] / totalDamage , highestDamageSource[2], highestDamage[2] / totalDamage )
+				Remote_CallFunction_NonReplay( player, "ServerCallback_FD_DisplayHarvesterKiller", FD_GetNumRestartsLeft(), getHintForTypeId( highestDamageSource[0] ), highestDamageSource[0], highestDamage[0] / totalDamage, highestDamageSource[1], highestDamage[1] / totalDamage , highestDamageSource[2], highestDamage[2] / totalDamage )
 				player.SetNoTarget( true )
 				player.SetInvulnerable()
 			}
@@ -1171,7 +1170,7 @@ void function WaveBreak_RegisterAttackOrSupportScore( int scoretype )
 
 void function WaveBreak_AnnounceHarvesterDamaged()
 {
-	if(!file.harvesterWasDamaged)
+	if( !file.harvesterWasDamaged )
 		PlayFactionDialogueToTeam( "fd_waveRecapPerfect", TEAM_MILITIA, true )
 	else
 	{
@@ -1478,6 +1477,9 @@ void function FD_OnPlayerGetsNewPilotLoadout( entity player, PilotLoadoutDef loa
 	if( file.isLiveFireMap )
 		ReplacePlayerOrdnance( player, "mp_weapon_grenade_gravity" )
 	
+	if( GetCurrentPlaylistVarInt( "featured_mode_all_ticks", 0 ) == 1 )
+		ReplacePlayerOrdnance( player, "mp_weapon_frag_drone", ["all_ticks"] )
+	
 	//If player has bought the Amped Weapons before, keep it for the new weapons
 	if ( "hasPermenantAmpedWeapons" in player.s && player.s.hasPermenantAmpedWeapons )
 	{
@@ -1553,7 +1555,7 @@ void function FD_TeamReserveDepositOrWithdrawCallback( entity player, string act
 	}
 }
 
-bool function allPlayersReady()
+bool function FD_CheckPlayersReady()
 {
 	foreach( entity player in GetPlayerArrayOfTeam( TEAM_MILITIA ) )
 	{
@@ -1599,7 +1601,7 @@ bool function ClientCommandCallbackFDDropBattery( entity player, array<string> a
 	return true
 }
 
-bool function useShieldBoost( entity player, array<string> args )
+bool function ClientCommandCallbackUseShieldBoost( entity player, array<string> args )
 {
 	if( ( GetGlobalNetInt( "FD_waveState" ) == WAVE_STATE_BREAK || GetGlobalNetInt( "FD_waveState" ) == WAVE_STATE_NONE ) && player.GetPlayerNetInt( "numHarvesterShieldBoost" ) > 0 )
 		return false
@@ -1612,6 +1614,7 @@ bool function useShieldBoost( entity player, array<string> args )
 		if( !IsValid( fd_harvester.particleShield ) )
 		{
 			generateShieldFX( fd_harvester )
+			EmitSoundOnEntity( fd_harvester.harvester, "shieldwall_deploy" )
 			file.harvesterShieldDown = false //Assume this was set to true since shields went down
 		}
 		
@@ -1619,7 +1622,6 @@ bool function useShieldBoost( entity player, array<string> args )
 		boostcount--
 		
 		fd_harvester.lastDamage = Time() - GENERATOR_SHIELD_REGEN_DELAY
-		EmitSoundOnEntity( fd_harvester.harvester, "shieldwall_deploy" )
 		SetGlobalNetTime( "FD_harvesterInvulTime", Time() + 5 )
 		AddPlayerScore( player, "FDShieldHarvester" )
 		MessageToTeam( TEAM_MILITIA,eEventNotifications.FD_PlayerBoostedHarvesterShield, player, player )
@@ -1943,12 +1945,14 @@ void function FD_PlayerRespawnThreaded( entity player )
 		return
 	}
 	
-	if( file.dropshipState == eDropshipState.Returning || file.playersInShip >= 4 || GetGameState() != eGameState.Playing || !GetGlobalNetBool( "FD_waveActive" ) || GetConVarBool( "ns_fd_disable_respawn_dropship" ) || file.isLiveFireMap )
+	if( file.dropshipState == eDropshipState.Returning || file.playersInShip >= 4 || GetGameState() != eGameState.Playing || !GetGlobalNetBool( "FD_waveActive" ) || GetConVarBool( "ns_fd_disable_respawn_dropship" ) || file.isLiveFireMap || file.dropshipSpawnPosition == < 0, 0, 0 > )
 	{
 		//Teleport player to a more reliable location if they spawn on ground, some maps picks too far away spawns from the Harvester and Shop (i.e Colony, Homestead, Drydock)
 		if( IsValidPlayer( player ) && !player.IsTitan() )
 		{
-			if( !file.DropPodSpawns.len() || GetGameState() != eGameState.Playing )
+			if( file.dropshipSpawnPosition == < 0, 0, 0 > && file.DropPodSpawns.len() || GetConVarBool( "ns_fd_disable_respawn_dropship" ) && file.DropPodSpawns.len() )
+				thread FD_SpawnPlayerDroppod( player )
+			else if( !file.DropPodSpawns.len() || GetGameState() != eGameState.Playing )
 			{
 				player.SetOrigin( file.groundSpawnPosition )
 				player.SetAngles( file.groundSpawnAngles )
@@ -2106,7 +2110,6 @@ void function DamageScaleByDifficulty( entity ent, var damageInfo )
 				case eDamageSourceId.mp_weapon_pulse_lmg:
 				case eDamageSourceId.damagedef_titan_fall:
 				case eDamageSourceId.damagedef_titan_hotdrop:
-				case eDamageSourceId.mp_titanweapon_sniper:
 				DamageInfo_ScaleDamage( damageInfo, 0.1 )
 				break
 				
@@ -2208,21 +2211,8 @@ void function HarvesterShieldInvulnCheck( entity harvester, var damageInfo, floa
 	}
 	
 	int damageSourceID = DamageInfo_GetDamageSourceIdentifier( damageInfo )
-	switch( damageSourceID )
-	{
-		case eDamageSourceId.titanEmpField: //If Arc Titans uses Arc Cannon then their Electric Aura wont devastate Harvester Shield as a tradeoff, the Arc Cannon itself will do that instead
-			if( GetArcTitanWeaponOption() )
-				DamageInfo_SetDamage( damageInfo, 25 )
-		break
-
-		case eDamageSourceId.mp_titanweapon_arc_cannon:
-		DamageInfo_SetDamage( damageInfo, 1000 )
-		break
-			
-		case eDamageSourceId.mp_weapon_grenade_emp: //This is for Grunts using Arc Grenades, so they aren't totally useless
-		DamageInfo_SetDamage( damageInfo, 750 )
-		break
-	}
+	if( damageSourceID == eDamageSourceId.titanEmpField && GetArcTitanWeaponOption() ) //If Arc Titans uses Arc Cannon then their Electric Aura wont devastate Harvester Shield as a tradeoff, the Arc Cannon itself will do that instead
+		harvester.SetShieldHealth( min( harvester.GetShieldHealthMax(), harvester.GetShieldHealth() + 900 ) ) //Have to do this way because the super despicable method Respawn did in ShieldModifyDamage function
 }
 
 void function OnHarvesterDamaged( entity harvester, var damageInfo )
@@ -2299,7 +2289,6 @@ void function OnHarvesterDamaged( entity harvester, var damageInfo )
 		case eDamageSourceId.mp_titancore_laser_cannon:
 		case eDamageSourceId.mp_titancore_salvo_core:
 		case eDamageSourceId.mp_titanweapon_flightcore_rockets:
-		case eDamageSourceId.mp_titancore_flame_wave:
 		damageAmount *= 0.1
 		break
 		
@@ -2311,7 +2300,8 @@ void function OnHarvesterDamaged( entity harvester, var damageInfo )
 		case eDamageSourceId.mp_titanweapon_heat_shield:
 		case eDamageSourceId.mp_titanweapon_flame_wall:
 		case eDamageSourceId.mp_titanweapon_flame_ring:
-		damageAmount *= 0.1
+		case eDamageSourceId.mp_titancore_flame_wave:
+		damageAmount *= 0.025
 		break
 		
 		//Taken from consts, 1:1 to vanilla formula
@@ -2324,14 +2314,28 @@ void function OnHarvesterDamaged( entity harvester, var damageInfo )
 		damageAmount *= GENERATOR_DAMAGE_MORTAR_ROCKET_MULTIPLIER
 		break
 		
-		case eDamageSourceId.titanEmpField:
-			if( GetArcTitanWeaponOption() )
-				damageAmount = 25
-		break
-		
 		case eDamageSourceId.mp_weapon_smr: //SMR spectres doing 150 per missile is bad, so back to the 25 that they do to normal armor
 		damageAmount = 25
 		break
+	}
+	
+	if( harvester.GetShieldHealth() > 0 )
+	{
+		switch( damageSourceID )
+		{
+			case eDamageSourceId.titanEmpField: //If Arc Titans uses Arc Cannon then their Electric Aura wont devastate Harvester Shield as a tradeoff, the Arc Cannon itself will do that instead
+				if( GetArcTitanWeaponOption() )
+					damageAmount = 25
+			break
+
+			case eDamageSourceId.mp_titanweapon_arc_cannon:
+			damageAmount = 1200
+			break
+				
+			case eDamageSourceId.mp_weapon_grenade_emp: //This is for Grunts using Arc Grenades, so they aren't totally useless
+			damageAmount = 800
+			break
+		}
 	}
 	
 	float shieldPercent = ( ( harvester.GetShieldHealth().tofloat() / harvester.GetShieldHealthMax() ) * 100 )
@@ -2382,7 +2386,7 @@ void function OnHarvesterDamaged( entity harvester, var damageInfo )
 		
 		if( attackerTypeID in file.harvesterDamageSource ) //Only track damage from existing ids
 			file.harvesterDamageSource[attackerTypeID] += damageAmount
-			
+		
 		float newHealth = harvester.GetHealth() - damageAmount
 		float oldhealthpercent = ( ( harvester.GetHealth().tofloat() / harvester.GetMaxHealth() ) * 100 )
 		float healthpercent = ( ( newHealth / harvester.GetMaxHealth() ) * 100 )
@@ -2540,12 +2544,10 @@ void function OnEnemyNPCPlayerTitanSpawnThreaded( entity npc )
 	if( !IsAlive( npc ) )
 		return
 	
+	GiveShieldByDifficulty( npc, true )
 	entity soul = npc.GetTitanSoul()
 	if( IsValid( soul ) )
-	{
-		soul.SetShieldHealth( soul.GetShieldHealthMax() )
 		soul.SetTitanSoulNetBool( "showOverheadIcon", true )
-	}
 }
 
 void function OnTickSpawn( entity tick )
@@ -2556,7 +2558,7 @@ void function OnTickSpawn( entity tick )
 void function TickSpawnThreaded( entity tick )
 {
 	WaitFrame()
-	if( GetGameState() != eGameState.Playing || tick.GetParent() ) //Parented Ticks are Drop Pod ones, and those are handled by the function there itself
+	if( !GamePlaying() || IsValid( tick.GetParent() ) ) //Parented Ticks are Drop Pod ones, and those are handled by the function there itself
 		return
 
 	else if ( GetGlobalNetInt( "FD_waveState" ) == WAVE_STATE_IN_PROGRESS && IsHarvesterAlive( fd_harvester.harvester ) )
@@ -2570,7 +2572,7 @@ void function TickSpawnThreaded( entity tick )
 		tick.Minimap_SetCustomState( eMinimapObject_npc.AI_TDM_AI )
 		tick.EnableNPCFlag( NPC_ALLOW_INVESTIGATE )
 		if( tick.GetTeam() == TEAM_IMC )
-			thread singleNav_thread( tick, "" )
+			thread NPCNav_FD( tick, "" )
 	}
 	else
 	{
@@ -2604,7 +2606,8 @@ void function AddTurretSentry( entity turret )
 		
 		thread TurretRefundThink( turret )
 		
-		turret.GetMainWeapons()[0].AddMod( "fd" )
+		if( turret.GetMainWeapons()[0].GetWeaponClassName() == "mp_weapon_yh803_bullet" )
+			turret.GetMainWeapons()[0].AddMod( "fd" )
 		
 		if( file.isLiveFireMap )
 		{
@@ -2678,7 +2681,7 @@ void function GamemodeFD_OnPlayerKilled( entity victim, entity attacker, var dam
 	array<entity> militiaplayers = GetPlayerArrayOfTeam( TEAM_MILITIA )
 	int deaths = 0
 	foreach ( entity player in militiaplayers )
-		if ( !IsAlive( player ) || player.GetParent() && player.GetParent().GetClassName() == "npc_dropship" )
+		if ( !IsAlive( player ) || IsAlive( player.GetParent() ) && player.GetParent().GetClassName() == "npc_dropship" )
 			deaths++
 
 	foreach( entity player in GetPlayerArrayOfTeam( TEAM_MILITIA ) )
@@ -2933,6 +2936,7 @@ void function FD_OnNPCLeeched( entity victim, entity attacker )
 		victim.kv.WeaponProficiency = eWeaponProficiency.AVERAGE
 		victim.SetBehaviorSelector( "behavior_spectre" )
 		victim.Minimap_AlwaysShow( TEAM_MILITIA, null )
+		victim.ai.preventOwnerDamage = true
 	}
 }
 
@@ -2944,8 +2948,8 @@ void function OnTickDeath( entity victim, var damageInfo )
 	if ( findIndex != -1 )
 	{
 		spawnedNPCs.remove( findIndex )
-		SetGlobalNetInt( "FD_AICount_Ticks", GetGlobalNetInt( "FD_AICount_Ticks" ) -1 )
-		SetGlobalNetInt( "FD_AICount_Current", GetGlobalNetInt( "FD_AICount_Current" ) -1 )
+		SetGlobalNetInt( "FD_AICount_Ticks", GetGlobalNetInt( "FD_AICount_Ticks" ) - 1 )
+		SetGlobalNetInt( "FD_AICount_Current", GetGlobalNetInt( "FD_AICount_Current" ) - 1 )
 		victim.Minimap_Hide( TEAM_IMC, null )
 		victim.Minimap_Hide( TEAM_MILITIA, null )
 		
@@ -3177,7 +3181,7 @@ void function MonitorHarvesterProximity( entity harvester )
 
 
 
-												  
+
 /* Dropship Functions
 ██████  ██████   ██████  ██████  ███████ ██   ██ ██ ██████      ███████ ██    ██ ███    ██  ██████ ████████ ██  ██████  ███    ██ ███████ 
 ██   ██ ██   ██ ██    ██ ██   ██ ██      ██   ██ ██ ██   ██     ██      ██    ██ ████   ██ ██         ██    ██ ██    ██ ████   ██ ██      
@@ -4094,6 +4098,8 @@ void function FD_WaveCleanup()
 
 	if( IsValid( fd_harvester.harvester ) )
 		fd_harvester.harvester.Destroy() //Destroy harvester after match over
+	
+	thread FD_AttemptToRepairTurrets() //Repair turrets during black screen that remained from previous waves
 }
 
 int function getHintForTypeId( int typeId )

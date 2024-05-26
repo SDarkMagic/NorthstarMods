@@ -376,20 +376,23 @@ void function GameStateEnter_WinnerDetermined_Threaded()
 		
 		wait 4
 		
-		CleanUpEntitiesForRoundEnd()
-		foreach( entity player in GetPlayerArray() )
+		if( IsRoundBased() )
 		{
-			player.UnfreezeControlsOnServer()
-			player.DeployWeapon()
-			player.Server_TurnOffhandWeaponsDisabledOff()
+			CleanUpEntitiesForRoundEnd()
+			foreach( entity player in GetPlayerArray() )
+			{
+				player.UnfreezeControlsOnServer()
+				player.DeployWeapon()
+				player.Server_TurnOffhandWeaponsDisabledOff()
+			}
 		}
 	}
 	
 	wait CLEAR_PLAYERS_BUFFER //Required to properly restart without players in Titans crashing it in FD
 	
-	ClearDroppedWeapons()
 	if ( IsRoundBased() )
 	{
+		ClearDroppedWeapons()
 		svGlobal.levelEnt.Signal( "RoundEnd" )
 		int roundsPlayed = expect int ( GetServerVar( "roundsPlayed" ) )
 		roundsPlayed++
@@ -1094,9 +1097,9 @@ void function DialoguePlayNormal()
 	int totalScore = GameMode_GetScoreLimit( GameRules_GetGameMode() )
 	int winningTeam
 	int losingTeam
-	float diagIntervel = 71 // play a faction dailogue every 70 + 1s to prevent play together with winner dialogue
+	float diagIntervel = 91
 
-	while( GetGameState() == eGameState.Playing )
+	while( GamePlaying() )
 	{
 		wait diagIntervel
 		if( GameRules_GetTeamScore( TEAM_MILITIA ) < GameRules_GetTeamScore( TEAM_IMC ) )

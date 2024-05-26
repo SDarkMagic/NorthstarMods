@@ -463,6 +463,19 @@
 			"RunOn": "CLIENT || SERVER || UI"
 		},
 		{
+			"Path": "_testing.nut",
+			"RunOn": "CLIENT || SERVER || UI",
+			"ClientCallback": {
+				"Before": "Testing_Init"
+			},
+			"ServerCallback": {
+				"Before": "Testing_Init"
+			},
+			"UICallback": {
+				"Before": "Testing_Init"
+			}
+		},
+		{
 			"Path": "_event_models.gnut",
 			"RunOn": "SERVER && LOBBY",
 			"ServerCallback": {
@@ -478,10 +491,7 @@
 		},
 		{
 			"Path": "ai/_ai_elite_titans.nut",
-			"RunOn": "SERVER && MP",
-			"ServerCallback": {
-				"After": "EliteTitans_Init"
-			}
+			"RunOn": "SERVER && MP"
 		},
 	],
 
